@@ -138,3 +138,6 @@ dist
 *.key
 *.mobileprovision
 *.orig.*
+
+expense-tracker-mvp-plan.md
+.agents
