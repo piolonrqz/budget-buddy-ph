@@ -1,5 +1,5 @@
 import { IsString, IsNumber, IsEnum, IsOptional, IsDateString, Min } from 'class-validator';
-import { AllocationBucket } from '@prisma/client';
+import { AllocationBucket } from '../expenses.service';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateExpenseDto {

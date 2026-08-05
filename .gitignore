@@ -141,3 +141,7 @@ dist
 
 expense-tracker-mvp-plan.md
 .agents
+supabase
+.mcp.json
+.claude
+supabase_schema.sql

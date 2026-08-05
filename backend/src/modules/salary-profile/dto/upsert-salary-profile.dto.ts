@@ -1,5 +1,9 @@
 import { IsEnum, IsNumber, IsDateString, Min, Max } from 'class-validator';
-import { EmploymentType } from '@prisma/client';
+export enum EmploymentType {
+  REGULAR = 'regular',
+  CONTRACTUAL = 'contractual',
+  SELF_EMPLOYED = 'self_employed'
+}
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpsertSalaryProfileDto {

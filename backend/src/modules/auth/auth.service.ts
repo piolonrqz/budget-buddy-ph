@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { SupabaseService } from '../../supabase/supabase.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { RegisterDto } from './dto/register.dto';
@@ -8,43 +8,53 @@ import { LoginDto } from './dto/login.dto';
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly supabase: SupabaseService,
     private readonly jwtService: JwtService,
-  ) {}
+  ) { }
 
   async register(dto: RegisterDto) {
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
+    const { data: existingUser } = await this.supabase.getClient()
+      .from('users')
+      .select('id')
+      .eq('email', dto.email)
+      .maybeSingle();
 
     if (existingUser) {
       throw new BadRequestException('Email already in use');
     }
 
     const salt = await bcrypt.genSalt();
-    const passwordHash = await bcrypt.hash(dto.password, salt);
+    const passwordhash = await bcrypt.hash(dto.password, salt);
 
-    const user = await this.prisma.user.create({
-      data: {
+    const { data: user, error } = await this.supabase.getClient()
+      .from('users')
+      .insert({
         email: dto.email,
-        passwordHash,
+        passwordhash,
         name: dto.name,
-      },
-    });
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      throw new BadRequestException(error.message);
+    }
 
     return this.generateToken(user);
   }
 
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
+    const { data: user } = await this.supabase.getClient()
+      .from('users')
+      .select('*')
+      .eq('email', dto.email)
+      .maybeSingle();
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordhash);
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
@@ -65,4 +75,3 @@ export class AuthService {
     };
   }
 }
-

@@ -1,49 +1,50 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { SupabaseService } from '../../supabase/supabase.service';
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly supabase: SupabaseService) {}
 
   async getSummary(userId: string, monthYear: string) {
     // 1. Fetch Salary Profile
-    const profile = await this.prisma.salaryProfile.findUnique({
-      where: { userId },
-    });
+    const { data: profile } = await this.supabase.getClient()
+      .from('salary_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
 
     if (!profile) {
       throw new NotFoundException('Salary profile not found. Please set up your salary first.');
     }
 
     // 2. Fetch Deductions for the month
-    let deductions = await this.prisma.monthlyDeduction.findUnique({
-      where: {
-        userId_monthYear: { userId, monthYear },
-      },
-    });
+    let { data: deductions } = await this.supabase.getClient()
+      .from('monthly_deductions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('month_year', monthYear)
+      .maybeSingle();
 
-    // If no deductions found for this specific month, we could either return 0 or fall back to the most recent one if we assume salary is static, but for MVP let's just return 0s if not found
-    const netSalary = deductions ? Number(deductions.netSalary) : 0;
-    const grossSalary = deductions ? Number(deductions.grossSalary) : Number(profile.grossSalary);
+    const netSalary = deductions ? Number(deductions.net_salary) : 0;
+    const grossSalary = deductions ? Number(deductions.gross_salary) : Number(profile.gross_salary);
     
     // Calculate Budgets based on profile percentages applied to Net Salary
-    const needsBudget = (netSalary * Number(profile.needsPercentage)) / 100;
-    const wantsBudget = (netSalary * Number(profile.wantsPercentage)) / 100;
-    const savingsBudget = (netSalary * Number(profile.savingsPercentage)) / 100;
+    const needsBudget = (netSalary * Number(profile.needs_percentage)) / 100;
+    const wantsBudget = (netSalary * Number(profile.wants_percentage)) / 100;
+    const savingsBudget = (netSalary * Number(profile.savings_percentage)) / 100;
 
     // 3. Fetch Expenses for the month
     const startDate = new Date(`${monthYear}-01T00:00:00.000Z`);
     const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1);
     
-    const expenses = await this.prisma.expense.findMany({
-      where: {
-        userId,
-        expenseDate: {
-          gte: startDate,
-          lt: endDate,
-        },
-      },
-    });
+    const { data: expenses, error: expensesError } = await this.supabase.getClient()
+      .from('expenses')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('expense_date', startDate.toISOString())
+      .lt('expense_date', endDate.toISOString());
+
+    if (expensesError) throw new Error(expensesError.message);
 
     // Aggregate Expenses by Bucket
     let needsSpent = 0;
@@ -51,12 +52,12 @@ export class DashboardService {
     let savingsSpent = 0;
     let totalSpent = 0;
 
-    expenses.forEach((exp) => {
+    expenses.forEach((exp: any) => {
       const amt = Number(exp.amount);
       totalSpent += amt;
-      if (exp.allocationBucket === 'NEEDS') needsSpent += amt;
-      else if (exp.allocationBucket === 'WANTS') wantsSpent += amt;
-      else if (exp.allocationBucket === 'SAVINGS') savingsSpent += amt;
+      if (exp.allocation_bucket === 'needs') needsSpent += amt;
+      else if (exp.allocation_bucket === 'wants') wantsSpent += amt;
+      else if (exp.allocation_bucket === 'savings') savingsSpent += amt;
     });
 
     return {
@@ -85,8 +86,7 @@ export class DashboardService {
         },
       },
       deductions: deductions || null,
-      recentExpenses: expenses.slice(0, 5), // top 5 recent (assuming we want to sort, let's sort them above)
+      recentExpenses: expenses.slice(0, 5),
     };
   }
 }
-
