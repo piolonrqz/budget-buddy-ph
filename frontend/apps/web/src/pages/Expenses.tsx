@@ -1,0 +1,169 @@
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '@salary-tracker/shared';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+
+const formatCurrency = (amount: number) => 
+  new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount);
+
+const formatDate = (isoString: string) => 
+  new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(isoString));
+
+export const Expenses = () => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState('');
+  const [allocationBucket, setAllocationBucket] = useState('needs');
+  const [description, setDescription] = useState('');
+  
+  const queryClient = useQueryClient();
+
+  const { data: expenses, isLoading } = useQuery({
+    queryKey: ['expenses'],
+    queryFn: async () => {
+      const response = await apiClient.get('/expenses');
+      return response.data;
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (newExpense: any) => {
+      const response = await apiClient.post('/expenses', newExpense);
+      return response.data;
+    },
+    // Optimistic UI updates
+    onMutate: async (newExpense) => {
+      await queryClient.cancelQueries({ queryKey: ['expenses'] });
+      const previousExpenses = queryClient.getQueryData(['expenses']);
+      
+      const optimisticExpense = {
+        id: Math.random().toString(),
+        ...newExpense,
+        expense_date: newExpense.expenseDate,
+        allocation_bucket: newExpense.allocationBucket,
+      };
+
+      queryClient.setQueryData(['expenses'], (old: any) => {
+        return old ? [optimisticExpense, ...old] : [optimisticExpense];
+      });
+
+      return { previousExpenses };
+    },
+    onError: (err, newExpense, context: any) => {
+      // Rollback on error
+      if (context?.previousExpenses) {
+        queryClient.setQueryData(['expenses'], context.previousExpenses);
+      }
+      console.error('Failed to add expense', err);
+    },
+    onSettled: () => {
+      // Always refetch to ensure sync
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      // Also invalidate dashboard since balances changed
+      queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    mutation.mutate({
+      amount: Number(amount),
+      category,
+      allocationBucket,
+      description,
+      expenseDate: new Date().toISOString(),
+    });
+    // Reset form and close modal immediately
+    setIsModalOpen(false);
+    setAmount('');
+    setCategory('');
+    setDescription('');
+    setAllocationBucket('needs');
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto py-section px-xl space-y-block">
+      <header className="flex justify-between items-end">
+        <div>
+          <h1 className="text-display-lg font-display tracking-tight leading-[1.0] mb-xs">Expenses</h1>
+          <p className="text-mute dark:text-on-dark-mute">Track every peso.</p>
+        </div>
+        <Button variant="primary" onClick={() => setIsModalOpen(true)}>Add Expense</Button>
+      </header>
+
+      {/* Expense List */}
+      <Card variant="light">
+        {isLoading ? (
+          <p className="text-mute dark:text-on-dark-mute py-md text-center">Loading expenses...</p>
+        ) : expenses?.length > 0 ? (
+          <div className="divide-y divide-hairline-light dark:divide-hairline-dark">
+            {expenses.map((expense: any) => (
+              <div key={expense.id} className="py-md flex justify-between items-center">
+                <div>
+                  <p className="font-semibold text-ink dark:text-on-dark">{expense.category}</p>
+                  <p className="text-sm text-mute dark:text-on-dark-mute">
+                    {formatDate(expense.expense_date)} • <span className="capitalize">{expense.allocation_bucket}</span>
+                  </p>
+                  {expense.description && <p className="text-sm text-mute dark:text-on-dark-mute">{expense.description}</p>}
+                </div>
+                <p className="font-semibold text-ink dark:text-on-dark">{formatCurrency(expense.amount)}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-mute dark:text-on-dark-mute py-md text-center">No expenses yet. Start tracking!</p>
+        )}
+      </Card>
+
+      {/* Add Expense Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-xl">
+          <Card variant="light" className="w-full max-w-md">
+            <h2 className="text-heading-md font-semibold mb-lg">Add New Expense</h2>
+            <form onSubmit={handleSubmit} className="space-y-md">
+              <Input 
+                label="Amount (PHP)" 
+                type="number" 
+                value={amount} 
+                onChange={(e) => setAmount(e.target.value)} 
+                required 
+              />
+              <Input 
+                label="Category (e.g. Groceries)" 
+                type="text" 
+                value={category} 
+                onChange={(e) => setCategory(e.target.value)} 
+                required 
+              />
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-ink dark:text-on-dark-mute">Bucket</label>
+                <select 
+                  className="h-[56px] px-4 rounded-md bg-canvas-light dark:bg-surface-elevated text-ink dark:text-on-dark border border-hairline-light dark:border-hairline-dark focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={allocationBucket}
+                  onChange={(e) => setAllocationBucket(e.target.value)}
+                >
+                  <option value="needs">Needs</option>
+                  <option value="wants">Wants</option>
+                  <option value="savings">Savings</option>
+                </select>
+              </div>
+              <Input 
+                label="Description (Optional)" 
+                type="text" 
+                value={description} 
+                onChange={(e) => setDescription(e.target.value)} 
+              />
+              
+              <div className="flex gap-md pt-md">
+                <Button type="button" variant="soft" fullWidth onClick={() => setIsModalOpen(false)}>Cancel</Button>
+                <Button type="submit" variant="dark" fullWidth>Save</Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+};

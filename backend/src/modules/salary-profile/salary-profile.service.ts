@@ -32,6 +32,7 @@ export class SalaryProfileService {
       needs_percentage: dto.needsPercentage,
       wants_percentage: dto.wantsPercentage,
       savings_percentage: dto.savingsPercentage,
+      pay_frequency: dto.payFrequency,
       effective_date: new Date(dto.effectiveDate).toISOString(),
     };
 
@@ -52,9 +53,9 @@ export class SalaryProfileService {
       payloadAfter: profile,
     });
 
-    // Run calculator to generate deduction snapshot for the current month
+    // Run calculator to generate deduction snapshot for the current month per-cutoff
     const currentMonthStr = new Date().toISOString().substring(0, 7); // YYYY-MM
-    const calculatedDeductions = PhilippineTaxCalculator.calculate(Number(dto.grossSalary));
+    const calculatedDeductions = PhilippineTaxCalculator.calculate(Number(dto.grossSalary), dto.payFrequency);
 
     const deductionData = {
       user_id: userId,

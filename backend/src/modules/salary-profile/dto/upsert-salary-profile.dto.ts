@@ -4,6 +4,12 @@ export enum EmploymentType {
   CONTRACTUAL = 'contractual',
   SELF_EMPLOYED = 'self_employed'
 }
+
+export enum PayFrequency {
+  MONTHLY = 'monthly',
+  BI_MONTHLY = 'bi-monthly',
+  WEEKLY = 'weekly'
+}
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpsertSalaryProfileDto {
@@ -15,6 +21,10 @@ export class UpsertSalaryProfileDto {
   @ApiProperty({ enum: EmploymentType, example: EmploymentType.REGULAR, description: 'Type of employment for tax calculations' })
   @IsEnum(EmploymentType)
   employmentType: EmploymentType;
+
+  @ApiProperty({ enum: PayFrequency, example: PayFrequency.BI_MONTHLY, description: 'How often the salary is received' })
+  @IsEnum(PayFrequency)
+  payFrequency: PayFrequency;
 
   @ApiProperty({ example: 50.0, description: 'Percentage allocation for Needs' })
   @IsNumber({ maxDecimalPlaces: 2 })

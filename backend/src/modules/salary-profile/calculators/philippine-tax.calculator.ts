@@ -1,5 +1,5 @@
 export class PhilippineTaxCalculator {
-  static calculate(grossSalary: number) {
+  static calculate(grossSalary: number, payFrequency: string = 'monthly') {
     // SSS (2024 rates roughly, capped at 29,750 for 1.25%)
     const sssCeiling = 29750;
     const sssBasis = Math.min(grossSalary, sssCeiling);
@@ -25,14 +25,18 @@ export class PhilippineTaxCalculator {
     const totalDeductions = sssContribution + pagibigContribution + philhealthContribution + incomeTax;
     const netSalary = grossSalary - totalDeductions;
 
+    let divisor = 1;
+    if (payFrequency === 'bi-monthly') divisor = 2;
+    if (payFrequency === 'weekly') divisor = 4;
+
     return {
-      grossSalary,
-      sssContribution,
-      pagibigContribution,
-      philhealthContribution,
-      incomeTax,
-      totalDeductions,
-      netSalary,
+      grossSalary: grossSalary / divisor,
+      sssContribution: sssContribution / divisor,
+      pagibigContribution: pagibigContribution / divisor,
+      philhealthContribution: philhealthContribution / divisor,
+      incomeTax: incomeTax / divisor,
+      totalDeductions: totalDeductions / divisor,
+      netSalary: netSalary / divisor,
     };
   }
 }

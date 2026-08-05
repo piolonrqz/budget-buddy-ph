@@ -25,17 +25,32 @@ export class DashboardService {
       .eq('month_year', monthYear)
       .maybeSingle();
 
-    const netSalary = deductions ? Number(deductions.net_salary) : 0;
-    const grossSalary = deductions ? Number(deductions.gross_salary) : Number(profile.gross_salary);
-    
-    // Calculate Budgets based on profile percentages applied to Net Salary
-    const needsBudget = (netSalary * Number(profile.needs_percentage)) / 100;
-    const wantsBudget = (netSalary * Number(profile.wants_percentage)) / 100;
-    const savingsBudget = (netSalary * Number(profile.savings_percentage)) / 100;
-
-    // 3. Fetch Expenses for the month
+    // 3. Date boundaries for the month
     const startDate = new Date(`${monthYear}-01T00:00:00.000Z`);
     const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1);
+
+    // 4. Fetch Actual Incomes
+    const { data: incomes } = await this.supabase.getClient()
+      .from('incomes')
+      .select('amount')
+      .eq('user_id', userId)
+      .gte('income_date', startDate.toISOString())
+      .lt('income_date', endDate.toISOString());
+
+    const actualReceivedCash = incomes?.reduce((sum, inc) => sum + Number(inc.amount), 0) || 0;
+
+    // Expected per cutoff from the deduction snapshot
+    const expectedPerCutoff = deductions ? Number(deductions.net_salary) : 0;
+    const payFrequency = profile.pay_frequency || 'monthly';
+    const divisor = payFrequency === 'bi-monthly' ? 2 : (payFrequency === 'weekly' ? 4 : 1);
+    const expectedTotalMonth = expectedPerCutoff * divisor;
+    
+    // Calculate Budgets based on profile percentages applied to ACTUAL RECEIVED CASH (Option 2)
+    const needsBudget = (actualReceivedCash * Number(profile.needs_percentage)) / 100;
+    const wantsBudget = (actualReceivedCash * Number(profile.wants_percentage)) / 100;
+    const savingsBudget = (actualReceivedCash * Number(profile.savings_percentage)) / 100;
+
+    // 5. Fetch Expenses for the month
     
     const { data: expenses, error: expensesError } = await this.supabase.getClient()
       .from('expenses')
@@ -62,8 +77,10 @@ export class DashboardService {
 
     return {
       monthYear,
-      grossSalary,
-      netSalary,
+      payFrequency,
+      expectedPerCutoff,
+      expectedTotalMonth,
+      actualReceivedCash,
       totalSpent,
       allocations: {
         needs: {
