@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { SupabaseService } from '../../supabase/supabase.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { UpsertSalaryProfileDto } from './dto/upsert-salary-profile.dto';
 import { PhilippineTaxCalculator } from './calculators/philippine-tax.calculator';
@@ -7,7 +7,7 @@ import { PhilippineTaxCalculator } from './calculators/philippine-tax.calculator
 @Injectable()
 export class SalaryProfileService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly supabase: SupabaseService,
     private readonly auditLog: AuditLogService,
   ) {}
 
@@ -17,32 +17,31 @@ export class SalaryProfileService {
       throw new BadRequestException('Allocations (needs + wants + savings) must equal exactly 100%');
     }
 
-    const existingProfile = await this.prisma.salaryProfile.findUnique({
-      where: { userId },
-    });
+    const { data: existingProfile } = await this.supabase.getClient()
+      .from('salary_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
 
-    const action = existingProfile ? 'UPDATE' : 'CREATE';
+    const action = existingProfile ? 'update' : 'create';
 
-    const profile = await this.prisma.salaryProfile.upsert({
-      where: { userId },
-      update: {
-        grossSalary: dto.grossSalary,
-        employmentType: dto.employmentType,
-        needsPercentage: dto.needsPercentage,
-        wantsPercentage: dto.wantsPercentage,
-        savingsPercentage: dto.savingsPercentage,
-        effectiveDate: new Date(dto.effectiveDate),
-      },
-      create: {
-        userId,
-        grossSalary: dto.grossSalary,
-        employmentType: dto.employmentType,
-        needsPercentage: dto.needsPercentage,
-        wantsPercentage: dto.wantsPercentage,
-        savingsPercentage: dto.savingsPercentage,
-        effectiveDate: new Date(dto.effectiveDate),
-      },
-    });
+    const profileData = {
+      user_id: userId,
+      gross_salary: dto.grossSalary,
+      employment_type: dto.employmentType,
+      needs_percentage: dto.needsPercentage,
+      wants_percentage: dto.wantsPercentage,
+      savings_percentage: dto.savingsPercentage,
+      effective_date: new Date(dto.effectiveDate).toISOString(),
+    };
+
+    const { data: profile, error } = await this.supabase.getClient()
+      .from('salary_profiles')
+      .upsert(profileData, { onConflict: 'user_id' })
+      .select('*')
+      .single();
+
+    if (error) throw new Error(error.message);
 
     await this.auditLog.logEvent({
       userId,
@@ -57,32 +56,34 @@ export class SalaryProfileService {
     const currentMonthStr = new Date().toISOString().substring(0, 7); // YYYY-MM
     const calculatedDeductions = PhilippineTaxCalculator.calculate(Number(dto.grossSalary));
 
-    await this.prisma.monthlyDeduction.upsert({
-      where: {
-        userId_monthYear: {
-          userId,
-          monthYear: currentMonthStr,
-        },
-      },
-      update: {
-        ...calculatedDeductions,
-      },
-      create: {
-        userId,
-        salaryProfileId: profile.id,
-        monthYear: currentMonthStr,
-        ...calculatedDeductions,
-      },
-    });
+    const deductionData = {
+      user_id: userId,
+      salary_profile_id: profile.id,
+      month_year: currentMonthStr,
+      gross_salary: calculatedDeductions.grossSalary,
+      sss_contribution: calculatedDeductions.sssContribution,
+      pagibig_contribution: calculatedDeductions.pagibigContribution,
+      philhealth_contribution: calculatedDeductions.philhealthContribution,
+      income_tax: calculatedDeductions.incomeTax,
+      total_deductions: calculatedDeductions.totalDeductions,
+      net_salary: calculatedDeductions.netSalary,
+    };
+
+    await this.supabase.getClient()
+      .from('monthly_deductions')
+      .upsert(deductionData, { onConflict: 'user_id,month_year' });
 
     return profile;
   }
 
   async getProfile(userId: string) {
-    return this.prisma.salaryProfile.findUnique({
-      where: { userId },
-      include: { deductions: true },
-    });
+    const { data: profile, error } = await this.supabase.getClient()
+      .from('salary_profiles')
+      .select('*, monthly_deductions(*)')
+      .eq('user_id', userId)
+      .maybeSingle();
+      
+    if (error) throw new Error(error.message);
+    return profile;
   }
 }
-

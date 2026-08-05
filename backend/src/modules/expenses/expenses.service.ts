@@ -1,14 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { SupabaseService } from '../../supabase/supabase.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
-import { AllocationBucket } from '@prisma/client';
+
+export enum AllocationBucket {
+  NEEDS = 'needs',
+  WANTS = 'wants',
+  SAVINGS = 'savings'
+}
 
 @Injectable()
 export class ExpensesService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly supabase: SupabaseService,
     private readonly auditLog: AuditLogService,
   ) {}
 
@@ -23,25 +28,22 @@ export class ExpensesService {
   async create(userId: string, dto: CreateExpenseDto) {
     const bucket = dto.allocationBucket || this.mapCategoryToBucket(dto.category);
     
-    const expense = await this.prisma.expense.create({
-      data: {
-        userId,
-        amount: dto.amount,
-        category: dto.category,
-        allocationBucket: bucket,
-        description: dto.description,
-        expenseDate: new Date(dto.expenseDate),
-        // receiptUrl could be added later if schema is updated, wait schema didn't include receipt_url?
-        // Ah, the schema does not have receipt_url! The plan mentioned it was optional but I didn't add it in schema.prisma.
-        // Let's omit receipt_url for now, or if it's there I will include it. I will omit it to be safe since I didn't add it to schema.prisma.
-      },
-    });
+    const { data: expense, error } = await this.supabase.getClient().from('expenses').insert({
+      user_id: userId,
+      amount: dto.amount,
+      category: dto.category,
+      allocation_bucket: bucket,
+      description: dto.description,
+      expense_date: new Date(dto.expenseDate).toISOString(),
+    }).select('*').single();
+
+    if (error) throw new Error(error.message);
 
     await this.auditLog.logEvent({
       userId,
       entityType: 'Expense',
       entityId: expense.id,
-      action: 'CREATE',
+      action: 'create',
       payloadAfter: expense,
     });
 
@@ -49,54 +51,48 @@ export class ExpensesService {
   }
 
   async findAll(userId: string, month?: string) {
-    // If month is provided as YYYY-MM
-    let whereClause: any = { userId };
+    let query = this.supabase.getClient().from('expenses').select('*').eq('user_id', userId).order('expense_date', { ascending: false });
+    
     if (month) {
       const startDate = new Date(`${month}-01T00:00:00.000Z`);
       const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1);
-      whereClause.expenseDate = {
-        gte: startDate,
-        lt: endDate,
-      };
+      query = query.gte('expense_date', startDate.toISOString()).lt('expense_date', endDate.toISOString());
     }
     
-    return this.prisma.expense.findMany({
-      where: whereClause,
-      orderBy: { expenseDate: 'desc' },
-    });
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return data;
   }
 
   async findOne(userId: string, id: string) {
-    const expense = await this.prisma.expense.findFirst({
-      where: { id, userId },
-    });
-    if (!expense) throw new NotFoundException('Expense not found');
+    const { data: expense, error } = await this.supabase.getClient().from('expenses').select('*').eq('id', id).eq('user_id', userId).single();
+    if (error || !expense) throw new NotFoundException('Expense not found');
     return expense;
   }
 
   async update(userId: string, id: string, dto: UpdateExpenseDto) {
     const existing = await this.findOne(userId, id);
 
-    let bucket = existing.allocationBucket;
+    let bucket = existing.allocation_bucket;
     if (dto.allocationBucket) bucket = dto.allocationBucket;
     else if (dto.category) bucket = this.mapCategoryToBucket(dto.category);
 
-    const updated = await this.prisma.expense.update({
-      where: { id },
-      data: {
-        amount: dto.amount,
-        category: dto.category,
-        allocationBucket: bucket,
-        description: dto.description,
-        ...(dto.expenseDate ? { expenseDate: new Date(dto.expenseDate) } : {}),
-      },
-    });
+    const updateData: any = {
+      amount: dto.amount,
+      category: dto.category,
+      allocation_bucket: bucket,
+      description: dto.description,
+    };
+    if (dto.expenseDate) updateData.expense_date = new Date(dto.expenseDate).toISOString();
+
+    const { data: updated, error } = await this.supabase.getClient().from('expenses').update(updateData).eq('id', id).select('*').single();
+    if (error) throw new Error(error.message);
 
     await this.auditLog.logEvent({
       userId,
       entityType: 'Expense',
       entityId: updated.id,
-      action: 'UPDATE',
+      action: 'update',
       payloadBefore: existing,
       payloadAfter: updated,
     });
@@ -106,17 +102,17 @@ export class ExpensesService {
 
   async remove(userId: string, id: string) {
     const existing = await this.findOne(userId, id);
-    await this.prisma.expense.delete({ where: { id } });
+    const { error } = await this.supabase.getClient().from('expenses').delete().eq('id', id);
+    if (error) throw new Error(error.message);
 
     await this.auditLog.logEvent({
       userId,
       entityType: 'Expense',
       entityId: existing.id,
-      action: 'DELETE',
+      action: 'delete',
       payloadBefore: existing,
     });
 
     return { deleted: true };
   }
 }
-
