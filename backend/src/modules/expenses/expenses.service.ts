@@ -10,6 +10,26 @@ export enum AllocationBucket {
   SAVINGS = 'savings'
 }
 
+export enum PaymentSource {
+  CASH = 'cash',
+  GCASH = 'gcash',
+  MAYA = 'maya',
+  MARIBANK = 'maribank',
+  GOTYME = 'gotyme'
+}
+
+export enum ExpenseCategory {
+  FOOD = 'Food',
+  TRANSPO = 'Transpo',
+  INTERNET_BILL = 'Internet Bill',
+  PARENTS_ALLOWANCE = 'Parents Allowance',
+  PERSONAL_ALLOWANCE = 'Personal Allowance',
+  LEISURE_MONEY = 'Leisure Money to Spend',
+  EMERGENCY_FUNDS = 'Emergency Funds',
+  TRAVEL_FUND = 'Travel Fund',
+  SAVINGS = 'Savings'
+}
+
 @Injectable()
 export class ExpensesService {
   constructor(
@@ -19,10 +39,21 @@ export class ExpensesService {
 
   private mapCategoryToBucket(category: string): AllocationBucket {
     const lower = category.toLowerCase();
+    
+    const needs = ['food', 'transpo', 'internet bill', 'parents allowance'];
+    const wants = ['personal allowance', 'leisure money to spend'];
+    const savings = ['emergency funds', 'travel fund', 'savings'];
+
+    if (needs.includes(lower)) return AllocationBucket.NEEDS;
+    if (wants.includes(lower)) return AllocationBucket.WANTS;
+    if (savings.includes(lower)) return AllocationBucket.SAVINGS;
+    
+    // Fallback if unknown
     if (['groceries', 'rent', 'utilities', 'insurance'].includes(lower)) return AllocationBucket.NEEDS;
     if (['dining out', 'entertainment', 'shopping', 'dining'].includes(lower)) return AllocationBucket.WANTS;
-    if (['transfer to savings', 'savings'].includes(lower)) return AllocationBucket.SAVINGS;
-    return AllocationBucket.WANTS; // Default fallback if unknown and unassigned
+    if (['transfer to savings'].includes(lower)) return AllocationBucket.SAVINGS;
+    
+    return AllocationBucket.WANTS;
   }
 
   async create(userId: string, dto: CreateExpenseDto) {
@@ -35,6 +66,7 @@ export class ExpensesService {
       allocation_bucket: bucket,
       description: dto.description,
       expense_date: new Date(dto.expenseDate).toISOString(),
+      payment_source: dto.paymentSource || PaymentSource.CASH,
     }).select('*').single();
 
     if (error) throw new Error(error.message);
@@ -84,6 +116,7 @@ export class ExpensesService {
       description: dto.description,
     };
     if (dto.expenseDate) updateData.expense_date = new Date(dto.expenseDate).toISOString();
+    if (dto.paymentSource) updateData.payment_source = dto.paymentSource;
 
     const { data: updated, error } = await this.supabase.getClient().from('expenses').update(updateData).eq('id', id).select('*').single();
     if (error) throw new Error(error.message);

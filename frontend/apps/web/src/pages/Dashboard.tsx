@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@salary-tracker/shared';
+import { apiClient, useAuthStore } from '@salary-tracker/shared';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 
@@ -8,6 +9,8 @@ const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount);
 
 export const Dashboard = () => {
+  const navigate = useNavigate();
+  const logout = useAuthStore(state => state.logout);
   const currentMonth = new Date().toISOString().substring(0, 7);
   const queryClient = useQueryClient();
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
@@ -63,6 +66,17 @@ export const Dashboard = () => {
     setIsIncomeModalOpen(true);
   };
 
+  const getPaymentSourceLabel = (source?: string) => {
+    switch (source) {
+      case 'gcash': return 'GCash';
+      case 'maya': return 'Maya';
+      case 'maribank': return 'Maribank';
+      case 'gotyme': return 'GoTyme';
+      case 'cash':
+      default: return 'Cash';
+    }
+  };
+
   let healthMessage = "Log your income to see your financial health.";
   let healthColor = "bg-surface-soft text-mute border-hairline-light dark:bg-surface-elevated dark:text-on-dark-mute dark:border-hairline-dark";
 
@@ -90,9 +104,12 @@ export const Dashboard = () => {
             <span className="text-sm"> (out of {formatCurrency(expectedTotalMonth)} expected)</span>
           </p>
         </div>
-        <div className="flex gap-sm">
-          <Button variant="outline-dark" size="sm" onClick={handleOpenIncomeModal}>Receive Salary</Button>
-          <Button variant="dark" size="sm">Add Expense</Button>
+        <div className="flex flex-col gap-sm items-end">
+          <div className="flex gap-sm">
+            <Button variant="outline-dark" size="sm" onClick={handleOpenIncomeModal}>Receive Salary</Button>
+            <Button variant="dark" size="sm" onClick={() => navigate('/expenses')}>Add Expense</Button>
+          </div>
+          <Button variant="soft" size="sm" onClick={() => logout()}>Log out</Button>
         </div>
       </header>
 
@@ -135,7 +152,14 @@ export const Dashboard = () => {
                 <div key={expense.id} className="py-md flex justify-between items-center">
                   <div>
                     <p className="font-semibold">{expense.category}</p>
-                    <p className="text-sm text-mute dark:text-on-dark-mute capitalize">{expense.allocation_bucket}</p>
+                    <div className="flex items-center gap-xs mt-1">
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-soft border border-hairline-light dark:bg-surface-elevated dark:border-hairline-dark text-mute dark:text-on-dark-mute">
+                        {getPaymentSourceLabel(expense.payment_source)}
+                      </span>
+                      <span className="text-sm text-mute dark:text-on-dark-mute capitalize">
+                        • {expense.allocation_bucket}
+                      </span>
+                    </div>
                   </div>
                   <p className="font-semibold">{formatCurrency(expense.amount)}</p>
                 </div>

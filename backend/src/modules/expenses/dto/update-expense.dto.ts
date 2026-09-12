@@ -1,5 +1,5 @@
 import { IsString, IsNumber, IsEnum, IsOptional, IsDateString, Min } from 'class-validator';
-import { AllocationBucket } from '../expenses.service';
+import { AllocationBucket, PaymentSource, ExpenseCategory } from '../expenses.service';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateExpenseDto {
@@ -9,10 +9,15 @@ export class UpdateExpenseDto {
   @Min(0)
   amount?: number;
 
-  @ApiPropertyOptional({ example: 'Groceries' })
+  @ApiPropertyOptional({ enum: ExpenseCategory })
   @IsOptional()
-  @IsString()
-  category?: string;
+  @IsEnum(ExpenseCategory)
+  category?: ExpenseCategory;
+
+  @ApiPropertyOptional({ enum: PaymentSource })
+  @IsOptional()
+  @IsEnum(PaymentSource)
+  paymentSource?: PaymentSource;
 
   @ApiPropertyOptional({ enum: AllocationBucket })
   @IsOptional()

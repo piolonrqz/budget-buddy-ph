@@ -16,15 +16,29 @@ export interface SalaryProfile {
   effectiveDate: string;
 }
 
+export type PaymentSource = 'cash' | 'gcash' | 'maya' | 'maribank' | 'gotyme';
+
+export type ExpenseCategory = 
+  | 'Food' 
+  | 'Transpo' 
+  | 'Internet Bill' 
+  | 'Parents Allowance' 
+  | 'Personal Allowance' 
+  | 'Leisure Money to Spend' 
+  | 'Emergency Funds' 
+  | 'Travel Fund' 
+  | 'Savings';
+
 export interface Expense {
   id: string;
   userId: string;
   amount: number;
-  category: string;
+  category: ExpenseCategory | string; // Fallback to string for older records
   allocationBucket: 'needs' | 'wants' | 'savings';
   description?: string;
   expenseDate: string;
   receiptUrl?: string;
+  paymentSource?: PaymentSource; // Optional for older records, but newly created will have it
 }
 
 export interface MonthlyDeductions {
